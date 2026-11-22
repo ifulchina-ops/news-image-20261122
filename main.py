@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
-"""Deliver the Twenty-Two front page.
+"""Ship the Twenty-Two front page to the grader.
 
-`build_art.py` paints entry.png; this file is the delivery step. It
-copies the painted page into the directory the harness reads and
-refuses to deliver anything unless the bytes are exactly the page the
-painter produced: right format, right size, right fingerprint.
+`build_art.py` paints entry.png; this file is the ship step. It copies
+the painted page into the directory the harness reads, and it will not
+ship anything unless the bytes are exactly the page the painter made:
+right format, right size, right fingerprint.
 
-Standard library only, so it runs in the grader's pinned image with
+Pure standard library, so it runs in the grader's pinned image with
 no fonts and no third-party packages.
 
-Usage:
     python3 main.py            # writes entry.png to /output by default
     MAKEFUN_OUTPUT_DIR=out python3 main.py   # or to the given directory
 """
@@ -18,51 +17,58 @@ import hashlib
 import os
 import pathlib
 import shutil
+import struct
 import sys
 
-# Fingerprint of entry.png exactly as build_art.py paints it -- repaint
-# and this value changes, so delivery refuses the new bytes until it
-# is updated here.
-WANT = "e0cad4200309243270355275a80628a7794d3974a3cc1fafd10f359ab42661e0"
-CEILING = 1048576
-MAGIC = b"\x89PNG\r\n\x1a\n"
+# Fingerprint of entry.png exactly as build_art.py paints it. Repaint
+# and this value changes, so shipping refuses the new bytes until the
+# fingerprint here is updated to match.
+EXPECTED_SHA256 = "e0cad4200309243270355275a80628a7794d3974a3cc1fafd10f359ab42661e0"
+MAX_BYTES = 1048576
+PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 
 
-def fail(message):
-    print("twenty-two: " + message, file=sys.stderr)
+def complain(text):
+    print("twenty-two: " + text, file=sys.stderr)
     return 1
 
 
-def check_blob(blob):
-    """Verify the delivered bytes are the painted page; 0 means good."""
-    if len(blob) > CEILING:
-        return fail("entry.png is %d bytes, over the 1 MiB ceiling"
-                    % len(blob))
-    if blob[:8] != MAGIC:
-        return fail("entry.png is not a PNG file")
-    got = hashlib.sha256(blob).hexdigest()
-    if got != WANT:
-        return fail("fingerprint mismatch: got %s" % got)
+def blob_ok(blob):
+    """Check the bytes are the painted page; 0 means they are."""
+    if len(blob) > MAX_BYTES:
+        return complain("entry.png is %d bytes, over the 1 MiB ceiling"
+                        % len(blob))
+    if blob[:8] != PNG_MAGIC:
+        return complain("entry.png is not a PNG file")
+    if len(blob) < 33 or blob[12:16] != b"IHDR":
+        return complain("entry.png has no IHDR chunk")
+    width, height = struct.unpack(">II", blob[16:24])
+    if width > 1024 or height > 1024:
+        return complain("entry.png is %dx%d, over the 1024x1024 ceiling"
+                        % (width, height))
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != EXPECTED_SHA256:
+        return complain("fingerprint mismatch: got %s" % digest)
     return 0
 
 
-def run():
-    root = pathlib.Path(__file__).resolve().parent
-    source = root / "entry.png"
-    if not source.exists():
-        return fail("entry.png is missing -- run build_art.py first")
-    out_dir = pathlib.Path(os.environ.get("MAKEFUN_OUTPUT_DIR", "/output"))
-    out_dir.mkdir(parents=True, exist_ok=True)
-    target = out_dir / "entry.png"
-    shutil.copyfile(source, target)
-    blob = target.read_bytes()
-    problem = check_blob(blob)
-    if problem:
-        return problem
+def ship():
+    here = pathlib.Path(__file__).resolve().parent
+    painted = here / "entry.png"
+    if not painted.exists():
+        return complain("entry.png is missing -- run build_art.py first")
+    dest_dir = pathlib.Path(os.environ.get("MAKEFUN_OUTPUT_DIR", "/output"))
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / "entry.png"
+    shutil.copyfile(painted, dest)
+    data = dest.read_bytes()
+    bad = blob_ok(data)
+    if bad:
+        return bad
     print("twenty-two: wrote %s (%d bytes, sha256 %s)"
-          % (target, len(blob), hashlib.sha256(blob).hexdigest()))
+          % (dest, len(data), hashlib.sha256(data).hexdigest()))
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(run())
+    raise SystemExit(ship())

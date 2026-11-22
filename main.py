@@ -10,8 +10,8 @@ Standard library only, so it runs in the grader's pinned image with
 no fonts and no third-party packages.
 
 Usage:
-    python3 main.py            # writes entry.png next to this file
-    MAKEFUN_OUTPUT_DIR=out python3 main.py
+    python3 main.py            # writes entry.png to /output by default
+    MAKEFUN_OUTPUT_DIR=out python3 main.py   # or to the given directory
 """
 
 import hashlib
